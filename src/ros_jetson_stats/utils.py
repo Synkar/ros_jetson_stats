@@ -28,6 +28,7 @@
 # OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE,
 # EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+import math
 import rospy
 from copy import deepcopy
 from diagnostic_msgs.msg import DiagnosticStatus, KeyValue
@@ -111,14 +112,14 @@ def board_status(hardware, board, dgtype):
     return d_board
 
 
-def disk_status(hardware, disk, dgtype):
+def disk_status(hardware, disk, dgtype, thresholds):
     """
     Status disk
     """
-    value = int(float(disk['used']) / float(disk['total']) * 100.0)
-    if value >= 90:
+    usage = round(float(disk['used']) / float(disk['total']) * 100)
+    if usage >= thresholds[DiagnosticStatus.ERROR]:
         level = DiagnosticStatus.ERROR
-    elif value >= 70:
+    elif usage >= thresholds[DiagnosticStatus.WARN]:
         level = DiagnosticStatus.WARN
     else:
         level = DiagnosticStatus.OK
@@ -135,7 +136,7 @@ def disk_status(hardware, disk, dgtype):
     return d_board
 
 
-def cpu_status(hardware, cpus):
+def cpu_usage_status(hardware, cpus, thresholds):
     """
     Calculate the cpu status based on average usage
 
@@ -148,23 +149,30 @@ def cpu_status(hardware, cpus):
     * model - Model Architecture
     * IdleStates
     """
+    level = DiagnosticStatus.OK
     message = 'OFF'
     values = []
 
     available_cpus = filter(lambda cpu: 'val' in cpu, cpus.values())
     usages = list(map(lambda cpu: cpu['val'], available_cpus))
     if len(usages) > 0:
-        avg = sum(usages) / len(usages)
+        avg = round(float(sum(usages)) / len(usages))
+        if avg >= thresholds[DiagnosticStatus.ERROR]:
+            level = DiagnosticStatus.ERROR
+        elif avg >= thresholds[DiagnosticStatus.WARN]:
+            level = DiagnosticStatus.WARN
+
         message = '{val}%'.format(val=avg)
         values = [
             KeyValue("Average", "{val}%".format(val=avg)),
             KeyValue("Minimum", "{val}%".format(val=min(usages))),
             KeyValue("Maximum", "{val}%".format(val=max(usages))),
-            KeyValue("Number of CPUs", "{val}%".format(val=len(usages))),
+            KeyValue("Number of CPUs", "{val}".format(val=len(usages))),
         ]
 
     # Make Diagnostic message
     d_cpu = DiagnosticStatus(
+        level=level,
         name='jetson_stats cpu usage',
         message=message,
         hardware_id=hardware,
@@ -172,7 +180,7 @@ def cpu_status(hardware, cpus):
     return d_cpu
 
 
-def single_cpu_status(hardware, name, cpu):
+def cpu_status(hardware, name, cpu):
     """
     Decode a cpu stats
 
@@ -210,7 +218,7 @@ def single_cpu_status(hardware, name, cpu):
     return d_cpu
 
 
-def gpu_status(hardware, gpu):
+def gpu_status(hardware, gpu, thresholds):
     """
     Decode and build a diagnostic status message
 
@@ -220,7 +228,14 @@ def gpu_status(hardware, gpu):
     * frq - Running frequency in kHz
     * val - Status GPU, value between [0, 100]
     """
+    if gpu['val'] >= thresholds[DiagnosticStatus.ERROR]:
+        level = DiagnosticStatus.ERROR
+    elif gpu['val'] >= thresholds[DiagnosticStatus.WARN]:
+        level = DiagnosticStatus.WARN
+    else:
+        level = DiagnosticStatus.OK
     d_gpu = DiagnosticStatus(
+        level=level,
         name='jetson_stats gpu',
         message='{val}%'.format(val=gpu['val']),
         hardware_id=hardware,
@@ -263,7 +278,7 @@ def fan_status(hardware, fan, dgtype):
     return d_fan
 
 
-def ram_status(hardware, ram, dgtype):
+def ram_status(hardware, ram, dgtype, thresholds):
     """
     Make a RAM diagnostic status message
 
@@ -277,21 +292,29 @@ def ram_status(hardware, ram, dgtype):
         * size - Size of the largest free block
         * unit - Unit size lfb
     """
+    usage = round(float(ram.get('use', 0)) / float(ram.get('tot', 0)) * 100)
+    if usage >= thresholds[DiagnosticStatus.ERROR]:
+        level = DiagnosticStatus.ERROR
+    elif usage >= thresholds[DiagnosticStatus.WARN]:
+        level = DiagnosticStatus.WARN
+    else:
+        level = DiagnosticStatus.OK
+
     lfb_status = ram['lfb']
     tot_ram, divider, unit_name = size_min(ram.get('tot', 0), start=ram.get('unit', 'M'))
     # Make ram diagnostic status
     d_ram = DiagnosticStatus(
+        level=level,
         name='jetson_stats {type} ram'.format(type=dgtype),
-        message='{use:2.1f}{unit_ram}B/{tot:2.1f}{unit_ram}B (lfb {nblock}x{size}{unit}B)'.format(
-            use=ram['use'] / divider,
+        message='{used:2.1f}{unit_ram}B/{tot:2.1f}{unit_ram}B ({usage}%)'.format(
+            used=ram['use'] / divider,
             unit_ram=unit_name,
             tot=tot_ram,
-            nblock=lfb_status['nblock'],
-            size=lfb_status['size'],
-            unit=lfb_status['unit']),
+            usage=usage),
         hardware_id=hardware,
         values=[
-            KeyValue("Use", "{use}".format(use=ram.get('use', 0))),
+            KeyValue("Usage", "{usage}".format(usage=usage)),
+            KeyValue("Used", "{used}".format(used=ram.get('use', 0))),
             KeyValue("Shared", "{shared}".format(shared=ram.get('shared', 0))),
             KeyValue("Total", "{tot}".format(tot=ram.get('tot', 0))),
             KeyValue("Unit", "{unit}B".format(unit=ram.get('unit', 'M'))),
@@ -363,7 +386,7 @@ def power_status(hardware, total, power):
     return d_volt
 
 
-def temp_status(hardware, temp, level_options):
+def temp_status(hardware, temp, thresholds):
     """
     Make a temperature diagnostic message
 
@@ -372,8 +395,7 @@ def temp_status(hardware, temp, level_options):
     """
     values = []
     level = DiagnosticStatus.OK
-    list_options = sorted(level_options.keys(), reverse=True)
-    max_temp = 20
+    max_temp = 0
     # List all temperatures
     for key, value in temp.items():
         values += [KeyValue(key, "{value:8.2f}C".format(value=value))]
@@ -381,20 +403,20 @@ def temp_status(hardware, temp, level_options):
             # Add last high temperature
             max_temp = value
     # Make status message
-    for th in list_options:
-        if max_temp >= th:
-            level = level_options[th]
-            break
+    if max_temp >= thresholds[DiagnosticStatus.ERROR]:
+        level = DiagnosticStatus.ERROR
+    elif max_temp >= thresholds[DiagnosticStatus.WARN]:
+        level = DiagnosticStatus.WARN
 
     if level is not DiagnosticStatus.OK:
         max_temp_names = []
         # List off names
         for key, value in temp.items():
-            if value >= th:
+            if value >= thresholds[level]:
                 # Store name
                 max_temp_names += [key]
         # Write a message
-        message = '[' + ', '.join(max_temp_names) + '] are more than {temp} C'.format(temp=th)
+        message = '[' + ', '.join(max_temp_names) + '] are more than {temp} C'.format(temp=thresholds[level])
     else:
         message = '{n_temp} temperatures reads'.format(n_temp=len(temp))
     # Make temperature diagnostic status

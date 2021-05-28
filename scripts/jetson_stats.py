@@ -52,14 +52,34 @@ from ros_jetson_stats.utils import (
 
 class ROSJtop:
 
-    def __init__(self, level_options):
-        self.level_options = level_options
+    def __init__(self):
         interval = rospy.get_param("~interval", 0.5)
         # Initialization jtop
         self.jetson = jtop.jtop(interval=interval)
         # Define Diagnostic array message
         # http://docs.ros.org/api/diagnostic_msgs/html/msg/DiagnosticStatus.html
         self.arr = DiagnosticArray()
+        # Get threshold params
+        self.cpu_thresholds = {
+            DiagnosticStatus.WARN: rospy.get_param("~cpu/warn", 80),
+            DiagnosticStatus.ERROR: rospy.get_param("~cpu/error", 90),
+        }
+        self.gpu_thresholds = {
+            DiagnosticStatus.WARN: rospy.get_param("~gpu/warn", 80),
+            DiagnosticStatus.ERROR: rospy.get_param("~gpu/error", 90),
+        }
+        self.ram_thresholds = {
+            DiagnosticStatus.WARN: rospy.get_param("~ram/warn", 80),
+            DiagnosticStatus.ERROR: rospy.get_param("~ram/error", 90),
+        }
+        self.temp_thresholds = {
+            DiagnosticStatus.WARN: rospy.get_param("~temperature/warn", 40),
+            DiagnosticStatus.ERROR: rospy.get_param("~temperature/error", 60),
+        }
+        self.disk_thresholds = {
+            DiagnosticStatus.WARN: rospy.get_param("~disk/warn", 70),
+            DiagnosticStatus.ERROR: rospy.get_param("~disk/error", 90),
+        }
         # Initialization ros publisher
         self.pub = rospy.Publisher('/diagnostics', DiagnosticArray, queue_size=1)
         # Initialize services server
@@ -125,13 +145,13 @@ class ROSJtop:
         # Make diagnostic message for each cpu
         self.arr.status += [single_cpu_status(self.hardware, name, jetson.cpu[name]) for name in jetson.cpu]
         # Merge all other diagnostics
-        self.arr.status += [cpu_status(self.hardware, jetson.cpu)]
-        self.arr.status += [gpu_status(self.hardware, jetson.gpu)]
-        self.arr.status += [ram_status(self.hardware, jetson.ram, 'mem')]
+        self.arr.status += [cpu_status(self.hardware, jetson.cpu, self.cpu_thresholds)]
+        self.arr.status += [gpu_status(self.hardware, jetson.gpu, self.gpu_thresholds)]
+        self.arr.status += [ram_status(self.hardware, jetson.ram, 'mem', self.ram_thresholds)]
         self.arr.status += [swap_status(self.hardware, jetson.swap, 'mem')]
         self.arr.status += [emc_status(self.hardware, jetson.emc, 'mem')]
         # Temperature
-        self.arr.status += [temp_status(self.hardware, jetson.temperature, self.level_options)]
+        self.arr.status += [temp_status(self.hardware, jetson.temperature, self.temp_thresholds)]
         # Read power
         total, power = jetson.power
         if power:
@@ -142,7 +162,7 @@ class ROSJtop:
         # Status board and board info
         self.arr.status += [self.board_status]
         # Add disk status
-        self.arr.status += [disk_status(self.hardware, jetson.disk, 'board')]
+        self.arr.status += [disk_status(self.hardware, jetson.disk, 'board', self.disk_thresholds)]
         # Update status jtop
         rospy.logdebug("jtop message %s" % rospy.get_time())
         self.pub.publish(self.arr)
@@ -151,15 +171,8 @@ class ROSJtop:
 def wrapper():
     # Initialization ros node
     rospy.init_node('jtop_node')
-    # Load level options
-    level_options = {
-        rospy.get_param("~level/error", 60): DiagnosticStatus.ERROR,
-        rospy.get_param("~level/warning", 40): DiagnosticStatus.WARN,
-        rospy.get_param("~level/ok", 20): DiagnosticStatus.OK,
-    }
     # Initialization ROS jtop wrapper
-    jetson = ROSJtop(level_options)
-    rospy.loginfo(level_options)
+    jetson = ROSJtop()
     # Start jetson
     jetson.start()
     # Spin ros
