@@ -39,8 +39,8 @@ from ros_jetson_stats.utils import (
     other_status,
     board_status,
     disk_status,
+    cpu_usage_status,
     cpu_status,
-    single_cpu_status,
     fan_status,
     gpu_status,
     ram_status,
@@ -143,9 +143,9 @@ class ROSJtop:
         # Status board and board info
         self.arr.status = [other_status(self.hardware, jetson, jtop.__version__)]
         # Make diagnostic message for each cpu
-        self.arr.status += [single_cpu_status(self.hardware, name, jetson.cpu[name]) for name in jetson.cpu]
+        self.arr.status += [cpu_status(self.hardware, name, jetson.cpu[name]) for name in jetson.cpu]
         # Merge all other diagnostics
-        self.arr.status += [cpu_status(self.hardware, jetson.cpu, self.cpu_thresholds)]
+        self.arr.status += [cpu_usage_status(self.hardware, jetson.cpu, self.cpu_thresholds)]
         self.arr.status += [gpu_status(self.hardware, jetson.gpu, self.gpu_thresholds)]
         self.arr.status += [ram_status(self.hardware, jetson.ram, 'mem', self.ram_thresholds)]
         self.arr.status += [swap_status(self.hardware, jetson.swap, 'mem')]
