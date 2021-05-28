@@ -116,7 +116,7 @@ def disk_status(hardware, disk, dgtype, thresholds):
     """
     Status disk
     """
-    usage = round(float(disk['used']) / float(disk['total']) * 100)
+    usage = int(float(disk['used']) / float(disk['total']) * 100)
     if usage >= thresholds[DiagnosticStatus.ERROR]:
         level = DiagnosticStatus.ERROR
     elif usage >= thresholds[DiagnosticStatus.WARN]:
@@ -156,7 +156,7 @@ def cpu_usage_status(hardware, cpus, thresholds):
     available_cpus = filter(lambda cpu: 'val' in cpu, cpus.values())
     usages = list(map(lambda cpu: cpu['val'], available_cpus))
     if len(usages) > 0:
-        avg = round(float(sum(usages)) / len(usages))
+        avg = int(float(sum(usages)) / len(usages))
         if avg >= thresholds[DiagnosticStatus.ERROR]:
             level = DiagnosticStatus.ERROR
         elif avg >= thresholds[DiagnosticStatus.WARN]:
@@ -292,7 +292,7 @@ def ram_status(hardware, ram, dgtype, thresholds):
         * size - Size of the largest free block
         * unit - Unit size lfb
     """
-    usage = round(float(ram.get('use', 0)) / float(ram.get('tot', 0)) * 100)
+    usage = int(float(ram.get('use', 0)) / float(ram.get('tot', 0)) * 100)
     if usage >= thresholds[DiagnosticStatus.ERROR]:
         level = DiagnosticStatus.ERROR
     elif usage >= thresholds[DiagnosticStatus.WARN]:
@@ -313,7 +313,7 @@ def ram_status(hardware, ram, dgtype, thresholds):
             usage=usage),
         hardware_id=hardware,
         values=[
-            KeyValue("Usage", "{usage}".format(usage=usage)),
+            KeyValue("Usage", "{usage}%".format(usage=usage)),
             KeyValue("Used", "{used}".format(used=ram.get('use', 0))),
             KeyValue("Shared", "{shared}".format(shared=ram.get('shared', 0))),
             KeyValue("Total", "{tot}".format(tot=ram.get('tot', 0))),
