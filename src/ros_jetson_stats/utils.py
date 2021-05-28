@@ -135,7 +135,44 @@ def disk_status(hardware, disk, dgtype):
     return d_board
 
 
-def cpu_status(hardware, name, cpu):
+def cpu_status(hardware, cpus):
+    """
+    Calculate the cpu status based on average usage
+
+    Fields:
+    * min_freq - Minimum frequency in kHz
+    * max_freq - Maximum frequency in kHz
+    * frq - Running frequency in kHz
+    * governor - Governor selected
+    * val - Status CPU, value between [0, 100]
+    * model - Model Architecture
+    * IdleStates
+    """
+    message = 'OFF'
+    values = []
+
+    cpus_with_val = filter(lambda cpu: 'val' in cpu, cpus)
+    usages = list(map(lambda cpu: cpu['val'], cpus_with_val))
+    if len(usages) > 0:
+        avg = sum(usages) / len(usages)
+        message = '{val}%'.format(val=avg)
+        values = [
+            KeyValue("Average", "{val}%".format(val=avg)),
+            KeyValue("Minimum", "{val}%".format(val=min(usages))),
+            KeyValue("Maximum", "{val}%".format(val=max(usages))),
+            KeyValue("Number of CPUs", "{val}%".format(val=len(usages))),
+        ]
+
+    # Make Diagnostic message
+    d_cpu = DiagnosticStatus(
+        name='jetson_stats cpu',
+        message=message,
+        hardware_id=hardware,
+        values=values)
+    return d_cpu
+
+
+def single_cpu_status(hardware, name, cpu):
     """
     Decode a cpu stats
 
