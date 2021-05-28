@@ -151,8 +151,8 @@ def cpu_status(hardware, cpus):
     message = 'OFF'
     values = []
 
-    cpus_with_val = filter(lambda cpu: 'val' in cpu, cpus)
-    usages = list(map(lambda cpu: cpu['val'], cpus_with_val))
+    available_cpus = filter(lambda cpu: 'val' in cpu, cpus.values())
+    usages = list(map(lambda cpu: cpu['val'], available_cpus))
     if len(usages) > 0:
         avg = sum(usages) / len(usages)
         message = '{val}%'.format(val=avg)
@@ -165,7 +165,7 @@ def cpu_status(hardware, cpus):
 
     # Make Diagnostic message
     d_cpu = DiagnosticStatus(
-        name='jetson_stats cpu',
+        name='jetson_stats cpu usage',
         message=message,
         hardware_id=hardware,
         values=values)
